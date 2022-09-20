@@ -1,0 +1,525 @@
+---
+title: "Reproducibility in 5-httlpr & depression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(data.table)
+
+
+knitr::opts_knit$set(root.dir = "/home/ben/Analysis/Reproducibility_paper/")
+
+```
+
+
+## importing stuff 
+
+```{r importing stuff}
+
+repro_papers <- read.delim("~/Analysis/Reproducibility_paper/5-httlpr+depression[Title+Abstract]_pubmed_set_25-01-22_21-19.csv", sep=",")
+
+repro_reviews<- read.delim("~/Analysis/Reproducibility_paper/5-httlpr+depression[Title+Abstract]_REVIEW_ONLY_pubmed_set_25-01-22_21-25.csv", sep=",")
+
+repro_abstracts <- readtext::readtext("~/Analysis/Reproducibility_paper/abstract-5-httlprTi-set.txt")
+glimpse(repro_abstracts$text)
+repro_abstracts$text <- gsub("\n\n\n","XXXXXX",repro_abstracts$text)
+repro_abstracts$text <- gsub("\n\n","YYYYYY",repro_abstracts$text)
+repro_abstracts$text <- gsub("\n","",repro_abstracts$text)
+#repro_abstracts$text <- gsub("\\[Indexed for MEDLINE\\]","",repro_abstracts$text)
+repro_abstracts$text <- gsub("XXXXXX","\n",repro_abstracts$text)
+repro_abstracts$text <- gsub("YYYYYY","\t",repro_abstracts$text)
+
+
+#repro_abstracts$text <- gsub("\t\t\t[1-1000]. ","\n",repro_abstracts$text)
+#repro_abstracts$text <- gsub("\t\t","\t",repro_abstracts$text)
+# repro_abstracts$text
+
+write(repro_abstracts$text,"~/Analysis/Reproducibility_paper/abstract-5-httlpr_modified.txt")
+
+
+```
+
+
+
+```{r cleaning up the columns}
+
+repro_abstracts <- read.delim("~/Analysis/Reproducibility_paper/abstract-5-httlpr_modified.txt", sep="\t", header = F)
+repro_abstracts_temp <- repro_abstracts[!repro_abstracts$V1 %like% "Conflict of interest statement:",]
+
+repro_abstracts_clean <- NULL
+repro_abstracts_clean$info <- repro_abstracts_temp$V1
+repro_abstracts_clean$title <- repro_abstracts_temp$V2
+repro_abstracts_clean$authors <- repro_abstracts_temp$V3
+repro_abstracts_clean$Author_info <- ifelse(repro_abstracts_temp$V4 %like% "Author information"==TRUE,repro_abstracts_temp$V4,repro_abstracts_temp$V3)
+repro_abstracts_clean$Author_info <- ifelse(repro_abstracts_clean$Author_info %like% "Author information"==TRUE,repro_abstracts_clean$Author_info,repro_abstracts_temp$V5)
+repro_abstracts_clean$Author_info <- ifelse(repro_abstracts_clean$Author_info %like% "Author information"==TRUE,repro_abstracts_clean$Author_info,"")
+
+repro_abstracts_clean$abstract <- repro_abstracts_temp$V5
+repro_abstracts_clean$abstract <- ifelse(repro_abstracts_clean$abstract %like% "Author information"==TRUE,"XXXXXXX",repro_abstracts_clean$abstract)
+repro_abstracts_clean$abstract <- ifelse(repro_abstracts_clean$abstract %like% "DOI:"==TRUE,NA,repro_abstracts_clean$abstract)
+repro_abstracts_clean$abstract[19] <- repro_abstracts_temp$V7[19]
+repro_abstracts_clean$abstract[59] <- repro_abstracts_temp$V6[59]
+repro_abstracts_clean$abstract[359] <- repro_abstracts_temp$V6[359]
+repro_abstracts_clean$abstract[577] <- repro_abstracts_temp$V5[577]
+
+repro_abstracts_clean$authors[59] <- repro_abstracts_temp$V4[59]
+repro_abstracts_clean$authors[359] <- repro_abstracts_temp$V4[359]
+
+
+repro_abstracts_clean$doi <- ifelse(repro_abstracts_temp$V6 %like% "DOI"==TRUE,repro_abstracts_temp$V6,repro_abstracts_temp$V7)
+repro_abstracts_clean$doi <- ifelse(repro_abstracts_clean$doi %like% "DOI"==TRUE,repro_abstracts_clean$doi,repro_abstracts_temp$V5)
+repro_abstracts_clean$doi <- ifelse(repro_abstracts_clean$doi %like% "DOI"==TRUE,repro_abstracts_clean$doi,repro_abstracts_temp$V8)
+repro_abstracts_clean$doi <- ifelse(repro_abstracts_clean$doi %like% "DOI"==TRUE,repro_abstracts_clean$doi,NA)
+repro_abstracts_clean$doi <- ifelse(!repro_abstracts_clean$doi %like% "DOI"==TRUE,"Not available",repro_abstracts_clean$doi)
+repro_abstracts_clean$doi[577] <- ""
+
+repro_abstracts_clean <- data.frame(repro_abstracts_clean)
+
+
+```
+
+
+
+```{r counting authors}
+
+
+repro_abstracts_clean$author_number <- as.vector(str_count(repro_abstracts_clean$authors, pattern=",")) 
+# We miss the last author at every line, so we correct for it
+repro_abstracts_clean$author_number <- repro_abstracts_clean$author_number+1
+hist(repro_abstracts_clean$author_number)
+
+pie(table(repro_abstracts_clean$author_number))
+
+
+```
+
+
+
+
+```{r countries of origin}
+
+countries <- c("Afghanistan", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", "Brunei Darussalam", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", "Christmas Island", "Cocos", "Colombia", "Comoros", "Congo", "Cook Islands", "Costa Rica", "Cote D'Ivoire", "IvoryCoast", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark", "Djibouti", "Dominica", "East Timor", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Ethiopia", "Falkland Islands", "Faroe Islands", "Fiji", "Finland", "France", "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Korea", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Macau", "Macedonia", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Norfolk Island", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Reunion", "Romania", "Russia", "Rwanda", "Saint Lucia", "Samoa", "San Marino", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon", "Somalia", "South Africa", "S. Georgia and S. Sandwich Isls.", "Spain", "Sri Lanka", "Sudan", "Suriname", "Swaziland", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates","UAE", "United Kingdom","UK", "United States of America","United States","USA", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican", "Venezuela", "Viet Nam", "Virgin Islands", "Wallis and Futuna Islands", "Western Sahara", "Yemen", "Yugoslavia", "Zaire", "Zambia", "Zimbabwe",
+"Los Angeles","Berkley","california","Yale","Brown","Michigan","Texas","Stanford","New Jersey", "Pennsylvania","Minnesota","Oregon", "Denver", "Oklahoma",
+               "McGill","Ontario","McMaster","Alberta",
+               "Maastricht","Nijmegen",
+               "Melbourne")
+
+countries <- data.frame(countries)
+
+repro_abstracts_clean$country_of_origin <- gsub("\\."," ",repro_abstracts_clean$Author_info)
+repro_abstracts_clean$country_of_origin <- gsub("España","Spain",repro_abstracts_clean$country_of_origin)
+repro_abstracts_clean$country_of_origin <- gsub("\\("," ",repro_abstracts_clean$country_of_origin)
+repro_abstracts_clean$country_of_origin <- gsub("\\)"," ",repro_abstracts_clean$country_of_origin)
+
+
+datalist = list()
+{
+  start_time <- Sys.time()
+  for (i in 1:length(countries$countries)) {
+    dat <- as.vector(str_count(tolower(str_split(repro_abstracts_clean$country_of_origin,pattern = ",")), pattern=tolower(as.character(countries$countries[i]))))
+    datalist[[i]] <- dat # add it to your list
+  }
+
+  end_time <- Sys.time()
+  end_time - start_time
+}
+
+
+country_of_origin <- do.call(cbind,datalist)
+colnames(country_of_origin) <- countries$countries
+country_of_origin <- data.frame(country_of_origin)
+
+country_of_origin <- country_of_origin[colSums(country_of_origin)>=1]
+table(rowSums(country_of_origin))
+dim(country_of_origin)
+
+
+repro_abstracts_with_countries <- cbind(repro_abstracts_clean,country_of_origin)
+dim(repro_abstracts_with_countries)
+repro_abstracts_with_countries[rowSums(repro_abstracts_with_countries[9:80])==0,]
+
+repro_abstracts_with_countries$USA <- repro_abstracts_with_countries$Oklahoma+
+  repro_abstracts_with_countries$Denver+
+  repro_abstracts_with_countries$Oregon+
+  repro_abstracts_with_countries$Minnesota+
+  repro_abstracts_with_countries$Pennsylvania+
+  repro_abstracts_with_countries$New.Jersey+
+  repro_abstracts_with_countries$Stanford+
+  repro_abstracts_with_countries$Texas+
+  repro_abstracts_with_countries$Michigan+
+  repro_abstracts_with_countries$Brown+
+  repro_abstracts_with_countries$Yale+
+  repro_abstracts_with_countries$california+
+  repro_abstracts_with_countries$Los.Angeles+
+  repro_abstracts_with_countries$United.States.of.America+
+  repro_abstracts_with_countries$United.States+
+  repro_abstracts_with_countries$USA
+
+repro_abstracts_with_countries$Oklahoma <- NULL
+repro_abstracts_with_countries$Denver <- NULL
+repro_abstracts_with_countries$Oregon <- NULL
+repro_abstracts_with_countries$Minnesota <- NULL
+repro_abstracts_with_countries$Pennsylvania <- NULL
+repro_abstracts_with_countries$New.Jersey <- NULL
+repro_abstracts_with_countries$Stanford <- NULL
+repro_abstracts_with_countries$Texas <- NULL
+repro_abstracts_with_countries$Michigan <- NULL
+repro_abstracts_with_countries$Brown <- NULL
+repro_abstracts_with_countries$Yale <- NULL
+repro_abstracts_with_countries$california <- NULL
+repro_abstracts_with_countries$Los.Angeles <- NULL
+repro_abstracts_with_countries$United.States.of.America <- NULL
+repro_abstracts_with_countries$United.States <- NULL
+
+
+repro_abstracts_with_countries$Canada <- repro_abstracts_with_countries$Canada+
+  repro_abstracts_with_countries$Alberta+
+  repro_abstracts_with_countries$McMaster+
+  repro_abstracts_with_countries$Ontario+
+  repro_abstracts_with_countries$McGill+
+  repro_abstracts_with_countries$Melbourne
+
+repro_abstracts_with_countries$Alberta <- NULL
+repro_abstracts_with_countries$McMaster <- NULL
+repro_abstracts_with_countries$Ontario <- NULL
+repro_abstracts_with_countries$McGill <- NULL
+repro_abstracts_with_countries$Melbourne <- NULL
+
+repro_abstracts_with_countries$Netherlands <- repro_abstracts_with_countries$Netherlands+
+  repro_abstracts_with_countries$Maastricht+
+  repro_abstracts_with_countries$Nijmegen
+
+repro_abstracts_with_countries$Maastricht <- NULL
+repro_abstracts_with_countries$Nijmegen <- NULL
+
+
+repro_abstracts_with_countries$UK <- repro_abstracts_with_countries$UK + repro_abstracts_with_countries$United.Kingdom
+repro_abstracts_with_countries$United.Kingdom <- NULL
+
+repro_abstracts_with_countries$Chad <- NULL # This is dues to a guy called "Chad", not the country
+
+
+```
+
+
+
+
+```{r isolating patient numbers}
+
+## Let's isolate the number of patients mentioned in the absctract to estimate the overall number of patients
+
+# repro_abstracts_with_countries$patient_estimate <- gsub("[a-z,A-Z]","",repro_abstracts_with_countries$abstract)
+repro_abstracts_with_countries$patient_estimate
+repro_abstracts_with_countries_patient_test <- repro_abstracts_with_countries[grep("patient",repro_abstracts_with_countries$abstract),]
+repro_abstracts_with_countries_patient_test$patient_estimate <- stringr::str_extract(repro_abstracts_with_countries_patient_test$abstract,".....patient.....")
+
+
+repro_abstracts_with_countries_patient_test <- dplyr::filter(repro_abstracts_with_countries_patient_test, grepl("[0-9]",patient_estimate))
+
+
+dim(repro_abstracts_with_countries_patient_test)
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- gsub("[a-z]","",repro_abstracts_with_countries_patient_test$patient_estimate)
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- gsub(" ","",repro_abstracts_with_countries_patient_test$patient_estimate)
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- mapply(strsplit(as.character(repro_abstracts_with_countries_patient_test$patient_estimate),"\\("),FUN=function(x){(as.character(x)[1])})
+
+
+repro_abstracts_with_countries_patient_test$patient_estimate
+
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- gsub(".5-","0",repro_abstracts_with_countries_patient_test$patient_estimate)
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- gsub(".4%).T","0",repro_abstracts_with_countries_patient_test$patient_estimate)
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- gsub(":","0",repro_abstracts_with_countries_patient_test$patient_estimate)
+repro_abstracts_with_countries_patient_test$patient_estimate <- gsub(",","0",repro_abstracts_with_countries_patient_test$patient_estimate)
+
+repro_abstracts_with_countries_patient_test$patient_estimate <- as.numeric(repro_abstracts_with_countries_patient_test$patient_estimate)
+repro_abstracts_with_countries_patient_test[is.na(repro_abstracts_with_countries_patient_test)]=0
+
+repro_abstracts_with_countries_patient_test <- subset(repro_abstracts_with_countries_patient_test,
+                                                      repro_abstracts_with_countries_patient_test$patient_estimate>0)
+
+mean(repro_abstracts_with_countries_patient_test$patient_estimate) # 200.625 patients per study
+
+```
+
+
+```{r estimating the impact of genotyping}
+# We calculated the carbon factor for runnin 1 genotype assay (see excel sheet)
+# 0,68997615	(in kg CO2e) per genotype assay 
+
+##______________________________________________##
+                  ## Method 1 ##
+##______________________________________________##
+#estimation based on the number of patients mentioned in abstracts # 
+
+# number of studies
+dim(repro_abstracts) # 581 studies in total
+
+# number of patients mentioned in abstracts # 
+mean(repro_abstracts_with_countries_patient_test$patient_estimate) # 200.625 patients per study
+
+# number of assays: 
+200.625*581 # = 116 563 assays
+
+# estimation of C02 footprint of genotyping
+116563*0.68997615
+
+# 80425.69 kg CO2e in genotyping footprint 
+# 80.425 ton of CO2e in genotyping footprint 
+
+
+
+##______________________________________________##
+                  ## Method 2 ##
+##______________________________________________##
+
+#estimation based on the number of patients mentioned in Sen et al 2004 # 
+
+study_number_Sen_et_al2004 <- c(759,634,415,397,397,284,244,225,221,192,190,189,186,186,175,148,144,126,125,121,101,86,84)
+mean(study_number_Sen_et_al2004)# 244.7391
+
+
+# number of assays: 
+244.7391*581 # = 142 193 assays
+
+# estimation of C02 footprint of genotyping
+142193*0.68997615
+
+# 98109.78 kg CO2e in genotyping footprint 
+# 98.109 ton of CO2e in genotyping footprint 
+
+
+
+
+##______________________________________________##
+                  ## Method 3 ##
+##______________________________________________##
+# Estimate the number of replicate using average reported in Sen et al 2011:
+#https://jamanetwork.com/journals/jamapsychiatry/fullarticle/211231
+
+# they report an average assay per study of 755 assays
+
+# number of assays: 
+755*581 # =  438 655 assays
+
+# estimation of C02 footprint of genotyping
+438655*0.68997615
+
+# 302661.5 kg CO2e in genotyping footprint 
+# 302.7 ton of CO2e in genotyping footprint 
+
+# This last number is pretty close to this of the "PGC lifetime depression diagnosis" cohort of the Border et al 2019 paper
+# N=443,264 (control subjects: 323,063; case subjects: 120,201)
+# ( https://ajp.psychiatryonline.org/doi/10.1176/appi.ajp.2018.18070881# )
+
+
+
+```
+
+
+
+
+```{r estimating the impact of commute to work}
+# this is the number of authors per paper as estimated above #
+pie(table(repro_abstracts_clean$author_number))
+
+# Let's now try to estimate the total number of authors 
+table(repro_abstracts_clean$author_number)
+sum(repro_abstracts_clean$author_number) # 4226
+
+# There are an estimated 4226 authors throughout 581 studies
+
+
+# We calculated the average carbon factor of 1 day of commute per person (see excel sheet)
+# 1.115222552 kg of carbon per commute per person per day of involvement 
+
+# Let's compute the carbon factor per person per year
+# We assume 52 weeks worked 5days/week minus 5weeks of holidays 
+
+1.115222552*(52-5)*5 # 262.0773
+# This gives us 262.0773 kg CO2e per year per person on average
+
+
+# Now lets assume that a study lasts 3 years to complete (based on personal observations)
+262.0773*3 # 
+# This gives us 786.2319 kg CO2e per person per study
+
+# Let's now bring in the total author number (4226 authors): 
+786.2319*4226 # 3322616
+
+# This gives us a total of 3322616 kg CO2e
+# which equals 3322.6 tons of CO2e associated with commuting for all the studies in our sample 
+
+
+```
+
+
+
+
+```{r estimating the impact of conferencing}
+
+# Let's now try to estimate the total number of authors 
+sum(repro_abstracts_clean$author_number) # 4226
+# There are an estimated 4226 authors throughout 581 studies
+
+
+# We base our conferencing data on Ciers et al 2018
+# https://doi.org/10.3390/su11010080
+
+# The data collected by Cier et al have:
+# 46% PhD students, 29% postdocs, 1.7% senior scientists and 8.3% professor
+
+## The footprint per person per year is estimated at : 
+# prof 5500 kg CO2e/year
+# senior scientists 2000 kg CO2e/year
+# postdoc 1000 kg CO2e/year
+# PhD student 600 kg CO2e/year
+
+# To make a weighted average of kg CO2e/year per person,
+# we multiply the fraction of scientists by their respective footprints
+
+5500*0.083+ 2000*0.017 + 1000*0.29 + 600*0.46 # 1056.5
+
+# Which gives us an average of 1056.5 kg CO2e /year per person
+
+# Let's now bring in the total author number (4226 authors): 
+1056.5*4226 # 4464769
+
+# This gives us a total of 4464769 kg CO2e
+# which equals 4464.8 tons of CO2e associated with conferencing for all the studies per year
+
+
+# Let's assume (again) a study time of 3 years: 
+4464769*3 # 13394307 kg CO2e
+
+# This gives us a total of 13394307 kg CO2e
+# which equals 13,394.3 tons of CO2e associated with conferencing for all the studies
+
+```
+
+
+
+
+
+```{r estimating the impact of labs energy consumption}
+# Let's now try to estimate the total number of authors 
+sum(repro_abstracts_clean$author_number) # 4226
+# There are an estimated 4226 authors throughout 581 studies
+
+# Let's isolate the number of authors per paper:
+median(repro_abstracts_clean$author_number) # 7 authors/study
+mean(repro_abstracts_clean$author_number) # 7.32409 authors/study
+# Let's assume that we have 1 PI for 
+
+# We get some estimate of space used per lab from :
+# https://facilities.med.wustl.edu/wp-content/uploads/2019/10/Wet-Lab-Space-Guidelines-Rev.-October-2019.pdf
+# This internal 2019 study estimates the square footage used per labs:
+# the surface per lab : PI + 6FTE (7 researcher in total) = 1,200 NASF (Net Assignable Square Feet)
+# 1200 NASF = 111.48 m2 for 1xPI + 6 FTE
+
+
+# Next, let's estimate the energy demand per m2 
+# we base our estimate on: 
+# Energy Consumption of University Laboratories:Detailed Results from S-Lab Audits
+# accessible at : 
+# https://www.dropbox.com/sh/qnecrnr9u29sa6p/AAA67fXVEWirXR4DgdYSxT-xa/Publications%20%26%20Videos?dl=0&preview=Energy+Consumption+of+University+Laboratories_Detailed+Results+from+S-Lab+Audits.pdf&subfolder_nav_tracking=1
+
+# The Energy Use per Unit Area (kWh/sq.m/y) is averaged based on all 7 location where the study took place: 
+mean(c(707,641,979,807,676,652,679)) # 734.4286 (kWh/sq.m/y) on average
+
+# Let's estimate the average energy consumption per lab (PI+6) per year 
+734.4286*111.48 # 81874.1 KWh/lab/y
+
+# Now lets bring this to a 3 year-long study: 
+81874.1*3 # 245622.3 KWh/lab/study
+
+# Let's now bring the total for all (581) studies:
+245622.3*581 # 142,706,556 KWh
+
+
+# ventilation-related energy 43-47% of total energy
+mean(c(43,47)) # 45%
+
+# Equipment 22-26% of total energy 
+mean(c(22,26)) # 24%
+
+# space heating 19-23% of total energy
+mean(c(19,23)) # 21%
+
+# Ventilation and equipment are mostly power by electricity, so we will use an electricity carbon factor (DEFRA 2007)
+# electricity carbon factor (DEFRA 2007) : 0.46673 kg CO2e per KWh
+
+# Ventilation + equipment energy: 
+(0.45+0.24)*142706556 # = 98467524 KWh
+#Now we bring in the carbon factor (per KWh)
+98467524*0.46673 # 45957747 kg CO2e for ventilation + equipment power
+# 45957.7 ton CO2e for ventilation + equipment power
+
+
+# Space heating is mostly using natural gas, so we will use natural gas carbon factor (DEFRA 2018)
+# kWh (Net CV)  0.20437 kg CO2e/kWh (DEFRA 2018)
+
+# heating energy needed: 
+0.21*142706556 # 29968377 KWh of gas needed
+#Now we bring in the carbon factor (per KWh)
+29968377*0.20437 # 6124637 kg CO2e for heating only
+# 6124.6 ton CO2e for heating only
+
+# Let's plug the Ventilation + equipment + heating CO2e footrpint together:\
+45957747 + 6124637 # 52082384 kg CO2e
+# 52082.4 ton CO2e
+
+
+pie(c(45957747, 6124637),labels = c("Ventilation + equipment: 
+                                    45957747 kg CO2e", "Heating: 6124637 kg CO2e"))
+
+```
+
+
+
+
+```{r combining estimates in 1 plot}
+
+totals_for_plotting <- NULL
+totals_for_plotting$Genotyping <- 302.7 # in tons
+totals_for_plotting$Commute <- 3322.6 # in tons
+totals_for_plotting$conferencing <- 13394.3 # in tons
+totals_for_plotting$Lab_energy <- 52082.4 # in tons
+totals_for_plotting <- data.frame(totals_for_plotting)
+totals_for_plotting$totals <- sum(totals_for_plotting[1:4])
+
+totals_for_plotting$totals # 69102 ton CO2e
+
+totals_for_plotting <- data.frame(t(totals_for_plotting))
+colnames(totals_for_plotting)[1] <- "tons_CO2e"
+totals_for_plotting$groups <-rownames(totals_for_plotting)
+
+ggplot(totals_for_plotting,aes(x=groups,y=tons_CO2e,fill=groups))+
+  geom_bar(stat = "identity")+
+  scale_x_discrete(limits = c("Genotyping","Commute","conferencing","Lab_energy","totals"))+
+  theme_minimal()+
+  theme(aspect.ratio = 1)
+  
+
+```
+
+
+
+
+
+
+
+
+
+
